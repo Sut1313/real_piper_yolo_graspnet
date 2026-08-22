@@ -1,0 +1,27 @@
+# Python caches and test artefacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# ROS/colcon generated workspaces
+build/
+install/
+log/
+
+# Temporary files created by atomic writers and local tools
+*.tmp
+*.tmp.*
+*.swp
+
+# Runtime IPC/output directory; keep the directory itself local
+shared_camera_data/*
+!shared_camera_data/.gitkeep
+scripts/shared_camera_data/
+scripts/graspnet-baseline/
+
+# Local editor and agent state
+.vscode/
+.idea/
+.codex/
+.agents/

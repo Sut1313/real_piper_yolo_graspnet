@@ -1,0 +1,15 @@
+# grasp_transform.py 单测 fixture（格式按调研文档 §4 handeye 格式：R_cam2base 3x3 旋转矩阵
+# + t_cam2base 米制平移 + 冗余 4x4 T_cam2base + description）
+# 内容：纯平移 T=(0.1, 0.2, 0.3) 米、单位旋转的 eye-to-hand 变换（T_cam2base）。
+R_cam2base:   # 3x3 旋转矩阵（单位阵，det=+1）
+  [[1.0, 0.0, 0.0],
+   [0.0, 1.0, 0.0],
+   [0.0, 0.0, 1.0]]
+t_cam2base:   # 平移（米）
+  [0.1, 0.2, 0.3]
+T_cam2base:   # 冗余的 4x4 齐次矩阵，与 R_cam2base/t_cam2base 完全一致
+  [[1.0, 0.0, 0.0, 0.1],
+   [0.0, 1.0, 0.0, 0.2],
+   [0.0, 0.0, 1.0, 0.3],
+   [0.0, 0.0, 0.0, 1.0]]
+description: 'Test fixture: pure translation T_cam2base=(0.1, 0.2, 0.3) m, identity rotation'

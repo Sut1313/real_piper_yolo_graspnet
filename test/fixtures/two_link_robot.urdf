@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="two_link">
+  <link name="base_link"/>
+  <link name="link1"/>
+  <link name="link2"/>
+  <joint
+    name="joint1"
+    type="revolute">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0.1" rpy="0 0 1.57079632679"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <joint
+    name="joint2"
+    type="fixed">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="0.2 0 0" rpy="0.5 0 0"/>
+  </joint>
+</robot>
