@@ -1,5 +1,3 @@
-Real Piper GraspNet
-
 ![Real Piper GraspNet 演示](assert/graspnet_pipeline.gif)
 
 本项目将 Intel RealSense D435i 的 RGB-D 数据送入 GraspNet，生成 6D 抓取候选，再由 Piper 机械臂执行候选预检和抓取动作。本文以当前源码为准，面向数据流理解、环境搭建、快速启动和真机联调。
