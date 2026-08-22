@@ -6,7 +6,7 @@ Real Piper GraspNet
 
 完整的历史实验与问题调查见 [`docs/PROJECT_ARCHITECTURE_AND_DEVELOPER_GUIDE.md`](docs/PROJECT_ARCHITECTURE_AND_DEVELOPER_GUIDE.md)。
 
-## 项目来源与致谢
+## 项目来源
 
 - 本项目使用 [`piper_single_calibration`](https://github.com/H-wq-ha/piper_single_calibration) 完成 Piper 机械臂与相机的手眼标定。
 - 本项目借鉴 [`piper_with_graspnet`](https://github.com/H-wq-ha/piper_with_graspnet) 的整体框架和抓取流程设计。
