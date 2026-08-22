@@ -10,14 +10,17 @@
 纯计算，不动真机。
 """
 import sys
+from pathlib import Path
+
 import numpy as np
 
 import pinocchio as pin
 
 from piper_sdk.kinematics import C_PiperForwardKinematics
 
-_URDF = ('./src/piper_ros/src/'
-         'piper_description/urdf/piper_description.urdf')
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_URDF = str(_PROJECT_ROOT / 'src' / 'piper_ros' / 'src' /
+            'piper_description' / 'urdf' / 'piper_description.urdf')
 
 
 def pinocchio_fk(joints_rad):

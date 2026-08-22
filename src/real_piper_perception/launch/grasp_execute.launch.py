@@ -70,11 +70,11 @@ def generate_launch_description():
         DeclareLaunchArgument('velocity_scale', default_value='0.1'),
         DeclareLaunchArgument(
             'handeye_yaml',
-            default_value='./camera_data/handeye_eye_to_hand.yaml',
+            default_value='camera_data/handeye_eye_to_hand.yaml',
             description='eye-to-hand 标定 yaml（camera_data/ 真实文件）'),
         DeclareLaunchArgument(
             'shared_dir',
-            default_value='./shared_camera_data',
+            default_value='shared_camera_data',
             description='感知/结果共享目录'),
         DeclareLaunchArgument(
             'csv_path', default_value='',

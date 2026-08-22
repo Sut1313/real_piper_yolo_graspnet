@@ -10,14 +10,16 @@ import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 
 from real_piper_perception.moveit_adapter import MoveGroupInterface
 
-SRDF_PATH = ('./install/piper_with_gripper_moveit/'
-             'share/piper_with_gripper_moveit/config/piper.srdf')
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRDF_PATH = str(PROJECT_ROOT / 'install' / 'piper_with_gripper_moveit' /
+                'share' / 'piper_with_gripper_moveit' / 'config' / 'piper.srdf')
 GROUP = 'arm'
 POSE_NAME = sys.argv[1] if len(sys.argv) > 1 else 'ready'
 

@@ -81,10 +81,10 @@ class GraspExecutorNode(Node):
         self.declare_parameter('dry_run_max_stage', '')
         self.declare_parameter(
             'handeye_yaml',
-            './camera_data/handeye_eye_to_hand.yaml')
+            'camera_data/handeye_eye_to_hand.yaml')
         self.declare_parameter(
             'shared_dir',
-            './shared_camera_data')
+            'shared_camera_data')
         self.declare_parameter('csv_path', '')  # 空 → <shared_dir>/perception_grasps.csv
         self.declare_parameter('approach_clearance', 0.05)
         self.declare_parameter('lift_z', 0.10)

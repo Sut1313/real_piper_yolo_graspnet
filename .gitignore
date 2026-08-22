@@ -20,6 +20,10 @@ shared_camera_data/*
 scripts/shared_camera_data/
 scripts/graspnet-baseline/
 
+# Private experiment captures and runtime logs
+docs/real_grasp_error_investigation/frame_*/
+docs/real_grasp_error_investigation/log/
+
 # Local editor and agent state
 .vscode/
 .idea/

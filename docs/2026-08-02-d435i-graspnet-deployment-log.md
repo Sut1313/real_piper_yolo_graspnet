@@ -1,7 +1,7 @@
 # D435i + GraspNet Real Piper Deployment Log
 
-Date: 2026-08-02  
-Workspace: `.`  
+Date: 2026-08-02
+Workspace: `.`
 Source reference workspace: `<source-workspace>`
 
 ## Goal

@@ -10,11 +10,14 @@ joint space（可靠 + 碰撞感知）。
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pinocchio as pin
 
-_URDF = ('./src/piper_ros/src/'
-         'piper_description/urdf/piper_description.urdf')
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_URDF = str(_PROJECT_ROOT / 'src' / 'piper_ros' / 'src' /
+            'piper_description' / 'urdf' / 'piper_description.urdf')
 _LINK6 = 'link6'
 JOINT_NAMES = ('joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6')
 

@@ -12,9 +12,11 @@
 """
 import numpy as np
 import pinocchio as pin
+from pathlib import Path
 
-_URDF = ('./src/piper_ros/src/'
-         'piper_description/urdf/piper_description.urdf')
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_URDF = str(_PROJECT_ROOT / 'src' / 'piper_ros' / 'src' /
+            'piper_description' / 'urdf' / 'piper_description.urdf')
 _JOINTS = ('joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6')
 
 M = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])

@@ -12,18 +12,21 @@
 import csv
 import sys
 import time
+from pathlib import Path
+
 import numpy as np
 
 from piper_sdk import C_PiperInterface_V2
 import pinocchio as pin
 
-sys.path.insert(0, './src/real_piper_perception')
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / 'src' / 'real_piper_perception'))
 from real_piper_perception.grasp_transform import load_handeye, camera_pose_to_base, graspnet_to_tcp_rotation  # noqa: E402
 
-CSV_PATH = './shared_camera_data/perception_grasps.csv'
-HANDEYE = './camera_data/handeye_eye_to_hand.yaml'
-URDF = ('./src/piper_ros/src/'
-        'piper_description/urdf/piper_description.urdf')
+CSV_PATH = str(PROJECT_ROOT / 'shared_camera_data' / 'perception_grasps.csv')
+HANDEYE = str(PROJECT_ROOT / 'camera_data' / 'handeye_eye_to_hand.yaml')
+URDF = str(PROJECT_ROOT / 'src' / 'piper_ros' / 'src' /
+           'piper_description' / 'urdf' / 'piper_description.urdf')
 FACTOR = 1000
 POS_TOL_MM = 50.0   # 回验位置容差
 RPY_TOL_DEG = 10.0  # 回验姿态容差
