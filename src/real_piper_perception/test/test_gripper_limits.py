@@ -6,6 +6,7 @@ from real_piper_perception.grasp_execute import GraspExecutor
 from real_piper_perception.gripper_limits import (
     PIPER_SMALL_GRIPPER_MAX_COMMAND,
     PIPER_SMALL_GRIPPER_MAX_OPENING_M,
+    fits_small_gripper,
     opening_m_to_sdk_command,
     required_opening_m,
     sdk_command_to_opening_m,
@@ -25,8 +26,10 @@ def test_sdk_default_small_gripper_max_is_70mm():
     assert opening_m_to_sdk_command(PIPER_SMALL_GRIPPER_MAX_OPENING_M) == 70_000
 
 
-def test_grasp_width_is_not_limited_to_70mm():
+def test_required_opening_and_small_gripper_fit_gate():
     assert abs(required_opening_m(0.100, 0.005) - 0.105) < 1e-12
+    assert fits_small_gripper(0.065, 0.005)
+    assert not fits_small_gripper(0.066, 0.005)
 
 
 class _NoHardware:
@@ -37,7 +40,7 @@ class _NoHardware:
         self.calls.append(args)
 
 
-def test_execute_pick_does_not_reject_overwidth_at_width_gate():
+def test_execute_pick_rejects_overwidth_before_hardware_command():
     executor = GraspExecutor(node=None, move_group=None, params={})
     fake = _NoHardware()
     executor._piper = fake
@@ -47,5 +50,6 @@ def test_execute_pick_does_not_reject_overwidth_at_width_gate():
         'lift': {'pos': [0, 0, 0], 'quat': [1, 0, 0, 0]},
     }
     result = executor.execute_pick(poses, grasp_width=0.066)
-    assert result['stage'] != 'gripper_width'
-    assert fake.calls != []
+    assert result['stage'] == 'gripper_width'
+    assert abs(result['cmd_width'] - 0.071) < 1e-12
+    assert fake.calls == []

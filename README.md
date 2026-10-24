@@ -1,14 +1,45 @@
+# real_piper_yolo_graspnet
+
 ![Real Piper GraspNet 演示](assert/graspnet_pipeline.gif)
 
-本项目将 Intel RealSense D435i 的 RGB-D 数据送入 GraspNet，生成 6D 抓取候选，再由 Piper 机械臂执行候选预检和抓取动作。本文以当前源码为准，面向数据流理解、环境搭建、快速启动和真机联调。
+本项目**基于上游项目 [`real_piper_graspnet`](https://github.com/H-wq-ha/real_piper_graspnet)
+（<https://github.com/H-wq-ha/real_piper_graspnet>）**，在其已验证的真机抓取链
+（GraspNet + 手眼变换 + Piper 执行）之上**添加了 YOLO 目标感知功能**：从 D435i
+同步 RGB-D 中先用 YOLOv8-Seg 识别目标实例、生成实例掩膜，再把该实例对应的点云交给
+GraspNet 估计 6D 抓取。上游项目不是本项目的运行时依赖，本仓库以独立仓库形式维护。
 
 完整的历史实验与问题调查见 [`docs/PROJECT_ARCHITECTURE_AND_DEVELOPER_GUIDE.md`](docs/PROJECT_ARCHITECTURE_AND_DEVELOPER_GUIDE.md)。
 
 ## 项目来源
 
+- 本项目以 [`real_piper_graspnet`](https://github.com/H-wq-ha/real_piper_graspnet)
+  已验证的真机抓取链为基线，并以独立仓库形式维护 YOLO 增强。
 - 本项目使用 [`piper_single_calibration`](https://github.com/H-wq-ha/piper_single_calibration) 完成 Piper 机械臂与相机的手眼标定。
 - 本项目借鉴 [`piper_with_graspnet`](https://github.com/H-wq-ha/piper_with_graspnet) 的整体框架和抓取流程设计。
 - 本仓库同时纳入了运行所需的 Piper ROS、RealSense ROS、GraspNet 推理和本项目自研代码；各部分的原始许可证和版权声明仍保留在对应目录中。
+
+## YOLO 模型能识别的物体类别
+
+当前使用的模型是 `tabletop_yolov8s_seg_v2.onnx`（YOLOv8s-Seg，16 类实例分割，
+输入 640×640，opset 17）。类别名在
+`src/real_piper_yolo_graspnet/real_piper_yolo_graspnet/yolo_detector.py` 的
+`TABLETOP_CLASS_NAMES` 中定义，顺序即模型输出的类别索引顺序：
+
+| 索引 | 类别 | 索引 | 类别 |
+|---|---|---|---|
+| 0 | `pen`（钢笔） | 8 | `sharpener`（卷笔刀） |
+| 1 | `pencil`（铅笔） | 9 | `block`（积木） |
+| 2 | `marker`（记号笔） | 10 | `cup`（杯子，默认目标） |
+| 3 | `eraser`（橡皮） | 11 | `bottle`（瓶子） |
+| 4 | `ruler`（直尺） | 12 | `book`（书） |
+| 5 | `scissors`（剪刀） | 13 | `phone`（手机） |
+| 6 | `stapler`（订书机） | 14 | `mouse`（鼠标） |
+| 7 | `tape`（胶带） | 15 | `remote`（遥控器） |
+
+共 **16 类**。默认抓取目标是 `cup`，可用 `target_class` 参数切换到上表任意一类；
+传入表外的类别名会直接报错退出（`d435i_yolo_graspnet_bridge.py` 启动时校验）。
+
+模型文件不随仓库分发，需通过 `model_path` 参数或 `TABLETOP_YOLO_MODEL` 环境变量指定。
 
 ## 1. 数据流架构
 
@@ -17,16 +48,17 @@ Intel RealSense D435i                         Piper 真机 / CAN
         │                                             │
         ▼                                             ▼
 realsense2_camera_node                  piper_ctrl_single_node
-        │ ROS topics                                  │ /joint_states_feedback
+        │ 同步 RGB-D                                  │ /joint_states_feedback
         ▼                                             │
-d435i_graspnet_bridge                                 │
-        │ color.png / depth.png / meta.mat / .ready   │
+d435i_yolo_graspnet_bridge                            │
+        │ YOLOv8-Seg 目标筛选                         │
+        │ color/depth/meta/instances/manifest/.ready  │
         ▼                                             │
 shared_camera_data  ◄──────── Docker bind mount ─────┘
         │
         ▼
-GraspNet inference_from_camera.py
-        │ 点云、ROI、推理、碰撞过滤、NMS
+GraspNet inference_from_camera.py --segmentation_mode yolo
+        │ 目标掩膜点云、推理、碰撞过滤、NMS
         ▼
 perception_grasps.csv
         │
@@ -65,6 +97,16 @@ src/real_piper_perception/
     sdk_safe_execute.py                 安全执行原型，当前未接入主路径
   scripts/piper_ssik_ik.py              实验性解析IK子进程包装器
   test/                                 单元测试和测试夹具
+
+src/real_piper_yolo_graspnet/
+  launch/d435i_yolo_graspnet_pipeline.launch.py
+                                         D435i、YOLO 桥接、手眼 TF
+  config/tabletop_yolo.yaml               YOLO 目标和深度门限
+  real_piper_yolo_graspnet/
+    yolo_detector.py                      YOLOv8-Seg ONNX 推理与解码
+    d435i_yolo_graspnet_bridge.py         同步 RGB-D、目标筛选
+    frame_writer.py                       原子帧数据提交
+  test/                                   YOLO 解码、筛选和帧契约测试
 
 graspnet-baseline/
   Dockerfile.20.04                     GraspNet镜像构建文件
@@ -184,6 +226,30 @@ MIN_DEPTH_M=0.25 MAX_DEPTH_M=0.90 \
 ```
 
 ROI 是归一化的 `x_min,y_min,x_max,y_max`，也可以由 `shared_camera_data/roi.json` 动态提供。
+
+### 5.1 使用 YOLO 实例分割
+
+`real_piper_yolo_graspnet` 是从 `real_piper_graspnet` 衍生的独立项目。
+它使用同步 RGB-D 和桌面物体 YOLOv8-Seg 模型，只把选中实例的
+点云交给原 GraspNet；真机坐标转换和执行链保持不变。
+
+终端 A：
+
+```bash
+TARGET_CLASS=cup ./run_d435i_yolo_bridge.sh
+```
+
+终端 B：
+
+```bash
+./run_graspnet_yolo.sh headless
+```
+
+默认模型是相邻 `tabletop_yolov8seg` 仓库中的
+`models/tabletop_yolov8s_seg_v2.onnx`。可用 `TABLETOP_YOLO_MODEL` 覆盖模型路径，
+用 `YOLO_ONNXRUNTIME_SITE_PACKAGES` 指定含 ONNX Runtime 的 Python
+`site-packages` 目录。完整数据契约见
+`src/real_piper_yolo_graspnet/README.md`。
 
 ## 6. 快速开始：只做抓取预检
 

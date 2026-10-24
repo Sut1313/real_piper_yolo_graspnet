@@ -1,0 +1,17 @@
+d435i_yolo_graspnet_bridge:
+  ros__parameters:
+    confidence_threshold: 0.35
+    nms_iou_threshold: 0.50
+    mask_threshold: 0.50
+    target_class: cup
+    fail_on_multiple: true
+    min_mask_pixels: 200
+    min_valid_depth_points: 120
+    min_depth_m: 0.15
+    max_depth_m: 1.20
+    sync_queue_size: 8
+    sync_slop: 0.05
+    factor_depth: 1000.0
+    depth_is_meters: false
+    use_calibration_intrinsics: true
+    write_overlay: true

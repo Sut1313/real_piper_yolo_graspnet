@@ -54,6 +54,10 @@ from real_piper_perception.grasp_candidates import (
     self_consistency,
 )
 from real_piper_perception.grasp_execute import END_EFFECTOR_LINK, GraspExecutor
+from real_piper_perception.gripper_limits import (
+    PIPER_SMALL_GRIPPER_MAX_OPENING_M,
+    fits_small_gripper,
+)
 from real_piper_perception.grasp_precheck import Prechecker
 from real_piper_perception.grasp_transform import load_handeye
 
@@ -74,7 +78,7 @@ class GraspExecutorNode(Node):
         # ------------------------------------------------------------------
         # 参数声明（brief 参数清单，默认值原样；handeye_yaml 用 camera_data 真实文件）
         # ------------------------------------------------------------------
-        self.declare_parameter('velocity_scale', 0.1)
+        self.declare_parameter('velocity_scale', 0.02)
         # scan_only: 节点默认 false；launch 默认 true（仅预检 dry-run，臂不动）。
         # 切 false 需现场二次确认（真机抓取执行）。
         self.declare_parameter('scan_only', False)
@@ -484,6 +488,15 @@ class GraspExecutorNode(Node):
                 self.get_logger().info(
                     f'candidate[{idx}] {cand.name}: score={cand.score:.4f} '
                     f'width={cand.width:.4f} xyz_camera={cand.xyz_camera.tolist()}')
+                if not fits_small_gripper(cand.width, self._gripper_margin):
+                    gate_rejected += 1
+                    required = float(cand.width) + self._gripper_margin
+                    self.get_logger().warn(
+                        f'candidate[{idx}] {cand.name}: 所需夹爪开口 '
+                        f'{required*1000:.1f}mm 超出 '
+                        f'{PIPER_SMALL_GRIPPER_MAX_OPENING_M*1000:.1f}mm '
+                        '小夹爪行程，跳过')
+                    continue
                 # 变换链（camera_pose_to_base + graspnet_to_tcp_rotation）在
                 # Prechecker.make_stage_poses 内部完成（Task 6 接口）
                 stage_poses = self._prechecker.make_stage_poses(
@@ -792,7 +805,7 @@ def main(args=None):
     node = GraspExecutorNode()
     node.start_keyboard_thread()
     # C1 修复：MultiThreadedExecutor —— 服务回调在 _run_flow_in_thread 内
-    # thread.join() 阻塞期间（velocity_scale=0.1 下流程可达数分钟），
+    # thread.join() 阻塞期间（velocity_scale=0.02 下流程更慢），
     # /joint_states_feedback 订阅回调必须仍在其他线程被处理，否则
     # GraspExecutor._feedback_cb 饿死、_latest_gripper 恒为 None、夹爪判定
     # 恒走"反馈无数据→failed"分支。单线程 executor 下同一流程的两种触发

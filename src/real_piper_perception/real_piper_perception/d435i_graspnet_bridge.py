@@ -27,7 +27,8 @@ class D435iGraspNetBridge(Node):
 
         self.declare_parameter(
             'shared_dir',
-            os.path.expanduser('~/real_piper_graspnet/shared_camera_data'),
+            os.path.expanduser(
+                '~/agrobot_code/real_piper_yolo_graspnet/shared_camera_data'),
         )
         self.declare_parameter('color_topic', '/camera/camera/color/image_raw')
         self.declare_parameter('depth_topic', '/camera/camera/aligned_depth_to_color/image_raw')
@@ -37,7 +38,8 @@ class D435iGraspNetBridge(Node):
         self.declare_parameter('depth_is_meters', False)
         self.declare_parameter(
             'calibration_yaml',
-            os.path.expanduser('~/real_piper_graspnet/camera_data/calibration.yaml'),
+            os.path.expanduser(
+                '~/agrobot_code/real_piper_yolo_graspnet/camera_data/calibration.yaml'),
         )
         # Project authority: this K/D was estimated from the same 640x480 SDK color
         # stream and was also used by hand-eye solvePnP. The inference side must use

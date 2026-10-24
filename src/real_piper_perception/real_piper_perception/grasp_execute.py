@@ -41,9 +41,8 @@
   piper_sdk 文档 "grippers_angle: The stroke of the gripper (in 0.001 mm)"——
   **米制总开度**（字段名 "angle" 是历史遗留，实为行程长度）。命令与反馈
   **同为米制总开度**，不存在"弧度 1:1"；判定比较在总开度域（米）进行。
-- 物体宽 + margin 的闭合目标 = 总开度，换算为 joint7 命令时除以
-  GRIPPER_VAL_MULTIPLE（=2，须与驱动 launch 参数一致）；抓取宽度不再做 70mm
-  门限筛选，最终夹持结果由真实夹爪反馈判定。
+- 物体宽 + margin 必须不超过小夹爪 70mm 总开口；候选选择层先过滤，
+  execute_pick 再做一次 fail-closed 防御。实际夹持结果仍由真实反馈判定。
   剩余开→闭映射微标定（指尖-物体实际接触）留 Task 11 阶段 3。
 
 MoveIt2 交互：当前环境未安装 ``moveit_py``（探测：ModuleNotFoundError），
@@ -65,6 +64,7 @@ from real_piper_perception.grasp_precheck import Prechecker
 from real_piper_perception.grasp_verify import classify_grasp, verify_grasp
 from real_piper_perception.gripper_limits import (
     PIPER_SMALL_GRIPPER_MAX_OPENING_M,
+    fits_small_gripper,
     opening_m_to_sdk_command,
     required_opening_m,
 )
@@ -78,7 +78,7 @@ if TYPE_CHECKING:
 
 # 参数键默认值（brief 参数键清单）
 PARAM_DEFAULTS = {
-    'velocity_scale': 0.1,             # MoveIt 轨迹执行速度缩放
+    'velocity_scale': 0.02,            # MoveIt 轨迹执行速度缩放
     'gripper_margin': 0.005,           # 夹爪闭合余量（米）
     'gripper_detect_threshold': 0.01,  # 判定阈值（米）
     'lift_z': 0.10,                    # 抬升高度（米，基座系 Z 向上）
@@ -107,6 +107,14 @@ FEEDBACK_STABLE_TIMEOUT_S = 3.0
 FEEDBACK_STABLE_WINDOW_S = 0.35
 FEEDBACK_STABLE_TOL_M = 0.0008
 FEEDBACK_STABLE_MIN_SAMPLES = 5
+
+# 空载全开/全闭参考的物理合理区间。除机械异常外，这也会拦截未连接
+# SDK 或失效反馈话题产生的默认 0/0 缓存值。
+GRIPPER_CALIB_OPEN_MIN_M = 0.050
+GRIPPER_CALIB_OPEN_MAX_M = 0.075
+GRIPPER_CALIB_CLOSED_MIN_M = 0.000
+GRIPPER_CALIB_CLOSED_MAX_M = 0.010
+GRIPPER_CALIB_MIN_SPAN_M = 0.030
 
 # ---------------------------------------------------------------------------
 # 夹爪（joint7）真机事实常量（C2 修复，2026-08-06 按 URDF/SRDF/驱动/sdk 核实，
@@ -159,6 +167,23 @@ def opening_for_joint7_cmd(joint7_m: float) -> float:
     return float(joint7_m) * GRIPPER_VAL_MULTIPLE
 
 
+def gripper_calibration_is_valid(full_open_m: float,
+                                 full_closed_m: float) -> bool:
+    """检查空载全开/全闭参考是否足以用于夹持结果判定。"""
+    try:
+        full_open = float(full_open_m)
+        full_closed = float(full_closed_m)
+    except (TypeError, ValueError):
+        return False
+    if not np.isfinite(full_open) or not np.isfinite(full_closed):
+        return False
+    return (
+        GRIPPER_CALIB_OPEN_MIN_M <= full_open <= GRIPPER_CALIB_OPEN_MAX_M
+        and GRIPPER_CALIB_CLOSED_MIN_M <= full_closed <= GRIPPER_CALIB_CLOSED_MAX_M
+        and full_open - full_closed >= GRIPPER_CALIB_MIN_SPAN_M
+    )
+
+
 # 笛卡尔直线参数（brief：eef_step 0.01、avoid_collisions=True；plan 文档
 # jump_threshold 0.0——MoveIt2 该参数已弃用，占位保留 0.0 语义）
 CARTESIAN_EEF_STEP = 0.01
@@ -186,7 +211,7 @@ class GraspExecutor:
         move_group: MoveIt MoveGroupInterface（arm 组，可为 None 占位）；
         gripper_move_group: MoveIt MoveGroupInterface（gripper 组，夹爪闭合用，
         C2 修复；可为 None 占位）；
-        params 键：velocity_scale(默认0.1)、gripper_margin(默认0.005米)、
+        params 键：velocity_scale(默认0.02)、gripper_margin(默认0.005米)、
         gripper_detect_threshold(默认0.01米)、lift_z(默认0.10米)、planning_time_exec(默认10.0)"""
         self.node = node
         self.move_group = move_group
@@ -305,6 +330,10 @@ class GraspExecutor:
         stable_window_s = max(float(stable_window_s), 0.0)
         stable_tol_m = max(float(stable_tol_m), 0.0)
         min_samples = max(int(min_samples), 2)
+        # 与上游已验证真机链一致：SDK 对象只发送 GripperCtrl，反馈统一来自
+        # 已 ConnectPort() 的 Piper ROS 驱动发布的 /joint_states_feedback。
+        # 不从 self._piper 直读；该惰性命令对象没有启动 CAN 接收线程，其
+        # GetArmGripperMsgs() 默认缓存为 0，曾导致 full_open/full_closed=0/0。
         with self._feedback_lock:
             entry_stamp = self._latest_gripper_stamp
         last_stamp = entry_stamp
@@ -557,6 +586,14 @@ class GraspExecutor:
         except (TypeError, ValueError) as exc:
             self._log('error', f'候选夹爪宽度非法（{exc}），执行前 fail-closed')
             return self._fail('gripper_width')
+        if not fits_small_gripper(grasp_width, self.params['gripper_margin']):
+            self._log(
+                'error',
+                f'候选所需开口超出小夹爪行程：grasp_width={float(grasp_width):.4f} m, '
+                f'margin={float(self.params["gripper_margin"]):.4f} m, '
+                f'required={cmd_width:.4f} m > {GRIPPER_MAX_OPENING_M:.3f} m，'
+                '执行前 fail-closed')
+            return self._fail('gripper_width', cmd_width)
         self._log('info', f'execute_pick: grasp_width={float(grasp_width):.4f} m, '
                           f'cmd_width={cmd_width:.4f} m（总开度；joint7 命令 = '
                           f'{joint7_cmd_for_opening(cmd_width):.4f} m 半行程）')
@@ -588,6 +625,18 @@ class GraspExecutor:
             return self._fail('gripper_calib', cmd_width)
         if not self._open_gripper():
             return self._fail('gripper_open', cmd_width)
+        if not gripper_calibration_is_valid(full_open, full_closed):
+            self._log(
+                'error',
+                f'夹爪参考标定无效：full_open={full_open*1000:.1f}mm, '
+                f'full_closed={full_closed*1000:.1f}mm, '
+                f'span={(full_open-full_closed)*1000:.1f}mm；'
+                f'要求 full_open={GRIPPER_CALIB_OPEN_MIN_M*1000:.0f}..'
+                f'{GRIPPER_CALIB_OPEN_MAX_M*1000:.0f}mm、'
+                f'full_closed={GRIPPER_CALIB_CLOSED_MIN_M*1000:.0f}..'
+                f'{GRIPPER_CALIB_CLOSED_MAX_M*1000:.0f}mm、'
+                f'span>={GRIPPER_CALIB_MIN_SPAN_M*1000:.0f}mm，fail-closed')
+            return self._fail('gripper_calib', cmd_width)
         self._log('info', f'判定参考标定：full_open={full_open*1000:.1f}mm '
                           f'full_closed={full_closed*1000:.1f}mm')
 

@@ -23,18 +23,19 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'shared_dir',
-            default_value=os.path.expanduser('~/real_piper_graspnet/shared_camera_data'),
+            default_value=os.path.expanduser(
+                '~/agrobot_code/real_piper_yolo_graspnet/shared_camera_data'),
         ),
         DeclareLaunchArgument('publish_rate_hz', default_value='5.0'),
         DeclareLaunchArgument(
             'calibration_yaml',
             default_value=os.path.expanduser(
-                '~/real_piper_graspnet/camera_data/calibration.yaml'),
+                '~/agrobot_code/real_piper_yolo_graspnet/camera_data/calibration.yaml'),
         ),
         DeclareLaunchArgument(
             'handeye_yaml',
             default_value=os.path.expanduser(
-                '~/real_piper_graspnet/camera_data/handeye_eye_to_hand.yaml'),
+                '~/agrobot_code/real_piper_yolo_graspnet/camera_data/handeye_eye_to_hand.yaml'),
         ),
         DeclareLaunchArgument('parent_frame', default_value='base_link'),
         DeclareLaunchArgument('child_frame', default_value='camera_link'),

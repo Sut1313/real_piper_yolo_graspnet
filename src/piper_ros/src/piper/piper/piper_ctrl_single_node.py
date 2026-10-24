@@ -300,7 +300,9 @@ class PiperRosNode(Node):
 
         # 遍历joint_data.name来映射位置
         for idx, joint_name in enumerate(joint_data.name):
-            self.get_logger().info(f"{joint_name}: {joint_data.position[idx]}")
+            # /joint_states 可达约 200Hz；逐关节 INFO 会产生海量日志并与
+            # /joint_states_feedback 发布争抢调度。需要时用 debug 级别观察。
+            self.get_logger().debug(f"{joint_name}: {joint_data.position[idx]}")
             joint_positions[joint_name] = round(joint_data.position[idx] * factor)
         
         # 获取第7个关节的位置

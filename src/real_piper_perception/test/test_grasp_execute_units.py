@@ -18,6 +18,7 @@ from real_piper_perception.grasp_execute import (
     GRIPPER_JOINT7_LIMIT_M,
     GRIPPER_VAL_MULTIPLE,
     GraspExecutor,
+    gripper_calibration_is_valid,
     joint7_cmd_for_opening,
     opening_for_joint7_cmd,
 )
@@ -175,6 +176,56 @@ def test_stable_feedback_times_out_on_continuous_motion():
         stable_tol_m=0.0005, min_samples=4)
     thread.join(timeout=1.0)
     assert got is None
+
+
+def test_stable_feedback_uses_ros_topic_even_when_command_sdk_exists():
+    """命令 SDK 存在时也必须使用驱动话题，不能读取未连接 SDK 的默认 0。"""
+    ex = _exec()
+    ex._piper = SimpleNamespace(
+        GetArmGripperMsgs=lambda: SimpleNamespace(
+            gripper_state=SimpleNamespace(grippers_angle=0)))
+
+    def feeder():
+        for _ in range(8):
+            ex._feedback_cb(_feedback_msg(0.0697))
+            time.sleep(0.02)
+
+    thread = threading.Thread(target=feeder, daemon=True)
+    thread.start()
+    got = ex._read_gripper_feedback_stable(
+        timeout_s=0.5, stable_window_s=0.10,
+        stable_tol_m=0.0008, min_samples=5)
+    thread.join(timeout=1.0)
+    assert got is not None
+    assert abs(got - 0.0697) < 1e-9
+
+
+def test_gripper_calibration_rejects_zero_zero_and_accepts_real_baseline():
+    assert not gripper_calibration_is_valid(0.0, 0.0)
+    assert not gripper_calibration_is_valid(0.0697, 0.0697)
+    assert not gripper_calibration_is_valid(float('nan'), 0.0043)
+    assert gripper_calibration_is_valid(0.0697, 0.0043)
+
+
+def test_execute_pick_stops_before_arm_motion_on_zero_zero_calibration():
+    ex = _exec()
+    ex._open_gripper = lambda: True
+    ex._gripper_set_width = lambda *_args, **_kwargs: True
+    feedback = iter((0.0, 0.0))
+    ex._read_gripper_feedback_stable = lambda: next(feedback)
+    arm_motion = []
+    ex._move_linear = lambda _pose: arm_motion.append('linear') or True
+    ex._move_pose = lambda _pose: arm_motion.append('pose') or True
+    poses = {
+        'approach': _pose(),
+        'grasp': _pose(),
+        'lift': _pose(),
+    }
+
+    result = ex.execute_pick(poses, grasp_width=0.050)
+
+    assert result['stage'] == 'gripper_calib'
+    assert arm_motion == []
 
 
 # ---------------------------------------------------------------------------

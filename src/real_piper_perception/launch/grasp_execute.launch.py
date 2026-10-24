@@ -67,7 +67,7 @@ def generate_launch_description():
             'dry_run_max_stage', default_value='',
             description='Task 10: only execute up to this stage '
                         '(open/pre_pose/approach/grasp/gripper/lift)'),
-        DeclareLaunchArgument('velocity_scale', default_value='0.1'),
+        DeclareLaunchArgument('velocity_scale', default_value='0.02'),
         DeclareLaunchArgument(
             'handeye_yaml',
             default_value='camera_data/handeye_eye_to_hand.yaml',

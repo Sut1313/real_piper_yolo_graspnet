@@ -14,6 +14,11 @@ log/
 *.tmp.*
 *.swp
 
+# Local calibration backups and failed experiment artefacts
+camera_data/*.bak-*
+camera_data/*.bak_*
+camera_data/*.invalid-*
+
 # Runtime IPC/output directory; keep the directory itself local
 shared_camera_data/*
 !shared_camera_data/.gitkeep

@@ -63,6 +63,8 @@ parser.add_argument('--top_k', type=int, default=50,
                     help='Number of top grasps to show [default: 50]')
 parser.add_argument('--poll_interval', type=float, default=0.1,
                     help='Poll interval in seconds [default: 0.1]')
+parser.add_argument('--max_frames', type=int, default=0,
+                    help='Stop after N consumed frames; 0 keeps running')
 parser.add_argument('--display_width', type=int, default=1280,
                     help='Display window width [default: 1280]')
 parser.add_argument('--display_height', type=int, default=720,
@@ -75,8 +77,9 @@ parser.add_argument('--grasp_object_margin', type=float, default=0.08,
                     help='Allowed margin around object point cloud for grasp validation [default: 0.08]')
 parser.add_argument('--candidates_per_object', type=int, default=300,
                     help='Number of complete GraspNet 6D candidates to export per object')
-parser.add_argument('--segmentation_mode', choices=['color', 'workspace'], default='color',
-                    help='color=Gazebo colored objects, workspace=real camera depth workspace')
+parser.add_argument('--segmentation_mode', choices=['color', 'workspace', 'yolo'], default='color',
+                    help=('color=colored objects, workspace=depth workspace, '
+                          'yolo=instances.npz masks from real_piper_yolo_graspnet'))
 parser.add_argument('--workspace_name', type=str, default='target',
                     help='Object name used when segmentation_mode=workspace')
 parser.add_argument('--min_depth_m', type=float, default=0.15,
@@ -243,12 +246,53 @@ def read_data_from_shared(shared_dir):
             factor_depth,
         )
 
-        return {
+        result = {
             'color': color_float,
             'depth': depth.astype(np.float32),
             'camera': camera,
             'color_vis': color,
-        }, None
+        }
+        if cfgs.segmentation_mode == 'yolo':
+            instances_path = os.path.join(shared_dir, 'instances.npz')
+            manifest_path = os.path.join(shared_dir, 'frame_manifest.json')
+            ready_path = os.path.join(shared_dir, '.ready')
+            if not all(os.path.exists(path) for path in (
+                    instances_path, manifest_path, ready_path)):
+                return None, "Missing YOLO instances/manifest/ready files"
+            with open(manifest_path, 'r') as stream:
+                manifest = json.load(stream)
+            with open(ready_path, 'r') as stream:
+                ready_sequence = stream.read().strip()
+            manifest_sequence = str(manifest.get('frame_sequence', ''))
+            if ready_sequence != manifest_sequence:
+                return None, (f"YOLO frame sequence mismatch: ready={ready_sequence!r} "
+                              f"manifest={manifest_sequence!r}")
+            if tuple(manifest.get('image_shape', ())) != (h, w):
+                return None, (f"YOLO manifest image shape {manifest.get('image_shape')} "
+                              f"does not match depth {(h, w)}")
+            with np.load(instances_path, allow_pickle=False) as archive:
+                required = {'masks', 'class_ids', 'confidences', 'boxes_xyxy', 'names'}
+                missing = required.difference(archive.files)
+                if missing:
+                    return None, f"YOLO instances missing keys: {sorted(missing)}"
+                instances = {name: archive[name] for name in required}
+            masks = np.asarray(instances['masks'])
+            instance_count = len(masks)
+            if masks.ndim != 3 or tuple(masks.shape[1:]) != (h, w):
+                return None, (f"YOLO masks shape {masks.shape} does not match "
+                              f"image {(h, w)}")
+            if any(len(np.asarray(instances[key])) != instance_count for key in (
+                    'class_ids', 'confidences', 'boxes_xyxy', 'names')):
+                return None, "YOLO instance arrays have inconsistent lengths"
+            if np.asarray(instances['boxes_xyxy']).shape != (instance_count, 4):
+                return None, "YOLO boxes_xyxy must have shape Nx4"
+            if int(manifest.get('detection_count', -1)) != instance_count:
+                return None, (f"YOLO manifest detection_count="
+                              f"{manifest.get('detection_count')} but archive has "
+                              f"{instance_count}")
+            result['instances'] = instances
+            result['frame_manifest'] = manifest
+        return result, None
     except Exception as e:
         return None, str(e)
 
@@ -506,6 +550,85 @@ def process_data(data, active_names=None):
         return None, "No valid points in point cloud"
 
     print(f"  valid points: {len(cloud_masked)}", flush=True)
+
+    if cfgs.segmentation_mode == 'yolo':
+        instances = data.get('instances')
+        if instances is None:
+            return None, "YOLO segmentation selected but instances were not loaded"
+        masks = np.asarray(instances['masks'], dtype=bool)
+        names = [str(value) for value in np.asarray(instances['names']).tolist()]
+        confidences = np.asarray(instances['confidences'], dtype=np.float32)
+        if len(masks) == 0:
+            return None, "YOLO frame contains no selected target instance"
+
+        depth_m = data['depth'].astype(np.float32) / float(camera.scale)
+        valid_target_depth = (
+            mask & (depth_m >= cfgs.min_depth_m) & (depth_m <= cfgs.max_depth_m))
+        union_mask = np.zeros_like(mask, dtype=bool)
+        object_masks = {}
+        object_points_by_name = {}
+        object_centers_camera = {}
+        object_stats = {}
+        used_names = set()
+        for index, instance_mask in enumerate(masks):
+            name = names[index] if index < len(names) else f'target_{index}'
+            if not name or name in used_names:
+                name = f'{name or "target"}_{index}'
+            used_names.add(name)
+            pixel_mask = instance_mask & valid_target_depth
+            points = cloud[pixel_mask]
+            if len(points) < cfgs.min_object_points:
+                print(
+                    f"  WARNING: YOLO instance {name} has {len(points)} valid depth "
+                    f"points; need {cfgs.min_object_points}",
+                    flush=True,
+                )
+                continue
+            union_mask |= pixel_mask
+            object_masks[name] = pixel_mask[mask]
+            object_points_by_name[name] = points
+            object_centers_camera[name] = points.mean(axis=0).astype(float)
+            object_stats[name] = int(len(points))
+            confidence = float(confidences[index]) if index < len(confidences) else 0.0
+            print(
+                f"  YOLO instance: {name} confidence={confidence:.3f} "
+                f"points={len(points)}",
+                flush=True,
+            )
+
+        if not object_masks:
+            return None, "No YOLO instance has enough valid depth points"
+        object_points = cloud[union_mask]
+        object_colors = color[union_mask]
+        object_stats['total_object_points'] = int(len(object_points))
+        object_stats['all_objects_visible'] = True
+
+        replace = len(object_points) < cfgs.num_point
+        indices = np.random.choice(len(object_points), cfgs.num_point, replace=replace)
+        cloud_sampled = object_points[indices]
+        color_sampled = object_colors[indices]
+        scene_cloud = make_point_cloud(cloud_masked, color_masked)
+        object_cloud = make_point_cloud(object_points, object_colors)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        cloud_tensor = torch.from_numpy(
+            cloud_sampled[np.newaxis].astype(np.float32)).to(device)
+
+        return {
+            'end_points': {
+                'point_clouds': cloud_tensor,
+                'cloud_colors': color_sampled,
+            },
+            'scene_cloud': scene_cloud,
+            'object_cloud': object_cloud,
+            'object_points': object_points,
+            'object_points_by_name': object_points_by_name,
+            'object_masks': object_masks,
+            'object_stats': object_stats,
+            'object_centers_camera': object_centers_camera,
+            'color_vis': data['color_vis'],
+            'roi': None,
+            'roi_source': 'yolo',
+        }, None
 
     if cfgs.segmentation_mode == 'workspace':
         depth_m = data['depth'].astype(np.float32) / float(camera.scale)
@@ -1307,6 +1430,11 @@ def main():
         # （状态过滤的历史动机：减少误检、跳过已放置物体，见 read_pick_state）
         if cfgs.segmentation_mode == 'workspace':
             active_names = [cfgs.workspace_name]
+        elif cfgs.segmentation_mode == 'yolo':
+            # The bridge has already selected exactly one target instance.
+            # A non-empty sentinel keeps the existing empty-pick-state guard out
+            # of the YOLO path; process_data reads the names from instances.npz.
+            active_names = ['yolo_selected_instance']
         else:
             active_names = read_pick_state(cfgs.shared_dir)
             if active_names is None:
@@ -1410,6 +1538,9 @@ def main():
 
         # 8. 清除标志 → 等待下一帧
         clear_ready_flag(cfgs.shared_dir)
+        if cfgs.max_frames > 0 and frame_count >= cfgs.max_frames:
+            print(f"Reached --max_frames={cfgs.max_frames}; stopping.", flush=True)
+            break
 
     # ── 清理 ───────────────────────────────────────────────────
     print(f"\n{'='*60}", flush=True)

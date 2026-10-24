@@ -14,7 +14,8 @@ import cv2
 import numpy as np
 
 SHARED_DIR = os.path.expanduser(
-    os.environ.get('SHARED_DIR', '~/real_piper_graspnet/shared_camera_data')
+    os.environ.get(
+        'SHARED_DIR', '~/agrobot_code/real_piper_yolo_graspnet/shared_camera_data')
 )
 RESULT_PATH = os.path.join(SHARED_DIR, 'result.png')
 
